@@ -1,14 +1,101 @@
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, redirect, url_for, session
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.utils import secure_filename
+import os
+from dotenv import load_dotenv
 import requests
 
-app = Flask(__name__)
-app.secret_key = 'your-secret-key'  # Needed for session management
+# Load env variables
+load_dotenv()
 
-GEMINI_API_KEY = "AIzaSyDBAcSGW3la_wpRSc0ZUfA9redDO6RwyUg"
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///finance.db'
+app.config['UPLOAD_FOLDER'] = 'static/receipts'
+
+db = SQLAlchemy(app)
+
+# Define database models
+class Income(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    amount = db.Column(db.Float, nullable=False)
+    source = db.Column(db.String(100), nullable=False)
+
+class Expense(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    amount = db.Column(db.Float, nullable=False)
+    category = db.Column(db.String(100), nullable=False)
+    satisfaction = db.Column(db.Integer, nullable=False)
+    receipt_image = db.Column(db.String(100), nullable=True)
+
+class Goal(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    target_amount = db.Column(db.Float, nullable=False)
+
+# Ensure upload folder exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Routes
 
 @app.route('/')
 def home():
-    return render_template('home.html')
+    incomes = Income.query.all()
+    expenses = Expense.query.all()
+    goals = Goal.query.all()
+
+    total_income = sum(income.amount for income in incomes)
+    total_expense = sum(expense.amount for expense in expenses)
+    balance = total_income - total_expense
+
+    return render_template('home.html', incomes=incomes, expenses=expenses, goals=goals,
+                           total_income=total_income, total_expense=total_expense, balance=balance)
+
+@app.route('/add-income', methods=['GET', 'POST'])
+def add_income():
+    if request.method == 'POST':
+        amount = float(request.form['amount'])
+        source = request.form['source']
+        income = Income(amount=amount, source=source)
+        db.session.add(income)
+        db.session.commit()
+        return redirect(url_for('home'))
+    return render_template('add_income.html')
+
+@app.route('/add-expense', methods=['GET', 'POST'])
+def add_expense():
+    if request.method == 'POST':
+        amount = float(request.form['amount'])
+        category = request.form['category']
+        satisfaction = int(request.form['satisfaction'])
+        receipt = request.files['receipt']
+        receipt_filename = secure_filename(receipt.filename)
+        if receipt_filename:  # Save only if file uploaded
+            receipt.save(os.path.join(app.config['UPLOAD_FOLDER'], receipt_filename))
+        else:
+            receipt_filename = None
+
+        expense = Expense(amount=amount, category=category,
+                          satisfaction=satisfaction, receipt_image=receipt_filename)
+        db.session.add(expense)
+        db.session.commit()
+        return redirect(url_for('home'))
+    return render_template('add_expense.html')
+
+@app.route('/goals', methods=['GET', 'POST'])
+def goals():
+    if request.method == 'POST':
+        name = request.form['name']
+        target_amount = float(request.form['target_amount'])
+        goal = Goal(name=name, target_amount=target_amount)
+        db.session.add(goal)
+        db.session.commit()
+        return redirect(url_for('home'))
+    goals = Goal.query.all()
+    return render_template('goals.html', goals=goals)
+
+# Optional: keep your Gemini chatbot!
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'your-gemini-key')
 
 @app.route('/chat', methods=['GET', 'POST'])
 def chat():
@@ -45,4 +132,6 @@ def ask_gemini(prompt):
         return "Sorry, something went wrong with the response."
 
 if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
     app.run(debug=True)

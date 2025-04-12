@@ -1,11 +1,35 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Home</title>
-</head>
-<body>
-    <h1>trap stay booming!</h1>
-    <p>This is the home page.</p>
-    <p><a href="/chat">Go to Chat</a></p>
-</body>
-</html>
+{% extends 'base.html' %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<p><strong>Total Income:</strong> ${{ total_income }}</p>
+<p><strong>Total Expenses:</strong> ${{ total_expense }}</p>
+<p><strong>Balance:</strong> ${{ balance }}</p>
+
+<h2>Goals</h2>
+<ul>
+    {% for goal in goals %}
+        <li>{{ goal.name }} — Target: ${{ goal.target_amount }}</li>
+    {% endfor %}
+</ul>
+
+<h2>Recent Expenses</h2>
+<ul>
+    {% for expense in expenses %}
+        <li>
+            ${{ expense.amount }} — {{ expense.category }} — Satisfaction: {{ expense.satisfaction }}<br>
+            {% if expense.receipt_image %}
+                <img src="{{ url_for('static', filename='receipts/' ~ expense.receipt_image) }}" width="100">
+            {% endif %}
+        </li>
+    {% endfor %}
+</ul>
+
+<h2>Recent Income</h2>
+<ul>
+    {% for income in incomes %}
+        <li>${{ income.amount }} — {{ income.source }}</li>
+    {% endfor %}
+</ul>
+
+{% endblock %}

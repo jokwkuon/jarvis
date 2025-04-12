@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Finance Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='receipts/style.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('home') }}">Dashboard</a>
+        <a href="{{ url_for('add_income') }}">Add Income</a>
+        <a href="{{ url_for('add_expense') }}">Add Expense</a>
+        <a href="{{ url_for('goals') }}">Goals</a>
+    </nav>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

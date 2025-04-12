@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Add Income</h1>
+<form method="POST">
+    <label>Amount:</label><br>
+    <input type="number" step="0.01" name="amount" required><br><br>
+
+    <label>Source:</label><br>
+    <input type="text" name="source" required><br><br>
+
+    <button type="submit">Add Income</button>
+</form>
+{% endblock %}
