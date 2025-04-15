@@ -5,7 +5,13 @@ import os
 from dotenv import load_dotenv
 import requests
 
-# Load env variables
+from extensions import db
+from models import Income, Expense, Goal
+from agents.budget_agent import get_budget_summary
+from agents.context_agent import build_context
+from context_store import read_context, append_chat_history, get_chat_history, write_context, init_context
+
+# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
@@ -13,30 +19,8 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///finance.db'
 app.config['UPLOAD_FOLDER'] = 'static/receipts'
 
-db = SQLAlchemy(app)
-
-# Define database models
-class Income(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    amount = db.Column(db.Float, nullable=False)
-    source = db.Column(db.String(100), nullable=False)
-
-class Expense(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    amount = db.Column(db.Float, nullable=False)
-    category = db.Column(db.String(100), nullable=False)
-    satisfaction = db.Column(db.Integer, nullable=False)
-    receipt_image = db.Column(db.String(100), nullable=True)
-
-class Goal(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    target_amount = db.Column(db.Float, nullable=False)
-
-# Ensure upload folder exists
+db.init_app(app)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# Routes
 
 @app.route('/')
 def home():
@@ -48,8 +32,29 @@ def home():
     total_expense = sum(expense.amount for expense in expenses)
     balance = total_income - total_expense
 
-    return render_template('home.html', incomes=incomes, expenses=expenses, goals=goals,
-                           total_income=total_income, total_expense=total_expense, balance=balance)
+    goal_progress = []
+    for goal in goals:
+        progress = (balance / goal.target_amount) * 100 if goal.target_amount > 0 else 0
+        progress = min(progress, 100)
+        status = "On Track 🚀" if progress >= 100 else "In Progress"
+        goal_progress.append({
+            'name': goal.name,
+            'progress': round(progress, 2),
+            'status': status
+        })
+
+    budget = get_budget_summary(db)
+
+    return render_template('home.html',
+                           incomes=incomes,
+                           expenses=expenses,
+                           goals=goals,
+                           total_income=total_income,
+                           total_expense=total_expense,
+                           balance=balance,
+                           goal_progress=goal_progress,
+                           budget_status=budget['status'],
+                           budget_advice=budget['advice'])
 
 @app.route('/add-income', methods=['GET', 'POST'])
 def add_income():
@@ -59,6 +64,7 @@ def add_income():
         income = Income(amount=amount, source=source)
         db.session.add(income)
         db.session.commit()
+        write_context(db)
         return redirect(url_for('home'))
     return render_template('add_income.html')
 
@@ -69,16 +75,16 @@ def add_expense():
         category = request.form['category']
         satisfaction = int(request.form['satisfaction'])
         receipt = request.files['receipt']
-        receipt_filename = secure_filename(receipt.filename)
-        if receipt_filename:  # Save only if file uploaded
+        receipt_filename = secure_filename(receipt.filename) if receipt.filename else None
+
+        if receipt_filename:
             receipt.save(os.path.join(app.config['UPLOAD_FOLDER'], receipt_filename))
-        else:
-            receipt_filename = None
 
         expense = Expense(amount=amount, category=category,
                           satisfaction=satisfaction, receipt_image=receipt_filename)
         db.session.add(expense)
         db.session.commit()
+        write_context(db)
         return redirect(url_for('home'))
     return render_template('add_expense.html')
 
@@ -90,28 +96,37 @@ def goals():
         goal = Goal(name=name, target_amount=target_amount)
         db.session.add(goal)
         db.session.commit()
+        write_context(db)
         return redirect(url_for('home'))
     goals = Goal.query.all()
     return render_template('goals.html', goals=goals)
 
-# Optional: keep your Gemini chatbot!
+# Chatbot route
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'your-gemini-key')
 
 @app.route('/chat', methods=['GET', 'POST'])
 def chat():
-    if 'chat_history' not in session:
-        session['chat_history'] = []
-
-    response_text = ""
     if request.method == 'POST':
         user_input = request.form['message']
-        response_text = ask_gemini(user_input)
 
-        # Append both user message and bot response to history
-        session['chat_history'].append({"sender": "user", "message": user_input})
-        session['chat_history'].append({"sender": "bot", "message": response_text})
+        # Build current context string
+        context = build_context(db)
 
-    return render_template('chat.html', chat_history=session['chat_history'])
+        # Construct prompt
+        full_prompt = f"{context}\n\nUser question: {user_input}"
+
+        print("=== PROMPT SENT TO GEMINI ===")
+        print(full_prompt)
+        print("=============================")
+
+        response_text = ask_gemini(full_prompt)
+
+        # Update chat history
+        append_chat_history("user", user_input)
+        append_chat_history("bot", response_text)
+
+    chat_history = get_chat_history()
+    return render_template('chat.html', chat_history=chat_history)
 
 def ask_gemini(prompt):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
@@ -134,4 +149,5 @@ def ask_gemini(prompt):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+        init_context()  # ✅ FIXED: removed db argument
     app.run(debug=True)
