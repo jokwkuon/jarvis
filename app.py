@@ -4,6 +4,7 @@ from werkzeug.utils import secure_filename
 import os
 from dotenv import load_dotenv
 import requests
+from emotion_detector import detect_emotion
 
 from extensions import db
 from models import Income, Expense, Goal
@@ -36,7 +37,7 @@ def home():
     for goal in goals:
         progress = (balance / goal.target_amount) * 100 if goal.target_amount > 0 else 0
         progress = min(progress, 100)
-        status = "On Track 🚀" if progress >= 100 else "In Progress"
+        status = "On Track" if progress >= 100 else "In Progress"
         goal_progress.append({
             'name': goal.name,
             'progress': round(progress, 2),
@@ -106,27 +107,45 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'your-gemini-key')
 
 @app.route('/chat', methods=['GET', 'POST'])
 def chat():
+    response_text = ""  # ✅ ALWAYS define this first!
+
     if request.method == 'POST':
         user_input = request.form['message']
 
-        # Build current context string
+        # ✅ Step 1: Build context string
         context = build_context(db)
-
-        # Construct prompt
         full_prompt = f"{context}\n\nUser question: {user_input}"
 
         print("=== PROMPT SENT TO GEMINI ===")
         print(full_prompt)
         print("=============================")
 
-        response_text = ask_gemini(full_prompt)
+        try:
+            response_text = ask_gemini(full_prompt)
+        except Exception as e:
+            response_text = "Sorry, I'm having trouble responding right now."
+            print("Gemini error:", e)
 
-        # Update chat history
+        # ✅ Step 2: Emotion detection
+        from models import detect_emotion
+        emotion, score = detect_emotion(user_input)
+        print(f"User emotion: {emotion} ({score:.2f})")
+
+        # ✅ Step 3: Add emotional response
+        if emotion == "sad":
+            response_text += "\n\nI'm here for you. Want to review your spending together?"
+        elif emotion == "joy":
+            response_text += "\n\nNice! Looks like you're feeling good about your budget!"
+        elif emotion == "anger":
+            response_text += "\n\nWhoa! Let's take a breath and talk through what happened."
+
+        # ✅ Step 4: Save chat history
         append_chat_history("user", user_input)
         append_chat_history("bot", response_text)
 
     chat_history = get_chat_history()
     return render_template('chat.html', chat_history=chat_history)
+
 
 def ask_gemini(prompt):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
@@ -149,5 +168,5 @@ def ask_gemini(prompt):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        init_context()  # ✅ FIXED: removed db argument
+        init_context()  #removed db argument
     app.run(debug=True)

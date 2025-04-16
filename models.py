@@ -1,5 +1,14 @@
-
+from transformers import pipeline
 from extensions import db
+
+
+# Load the classifier once
+emotion_classifier = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", top_k=1)
+
+def detect_emotion(text):
+    result = emotion_classifier(text)
+    top_emotion = result[0]  # First result from top_k=1
+    return top_emotion['label'], top_emotion['score']
 
 class Income(db.Model):
     id = db.Column(db.Integer, primary_key=True)

@@ -1,6 +1,6 @@
 import json
 import os
-from models import Income, Expense, Goal  # ✅ make sure models.py is in the same directory or properly imported
+from models import Income, Expense, Goal 
 
 CONTEXT_FILE = 'context_store.json'
 
@@ -14,7 +14,7 @@ def write_context(db):
     total_expense = sum(expense.amount for expense in expenses)
     balance = total_income - total_expense
 
-    budget_status = "Healthy ✅" if balance >= 0 else "Needs Attention ⚠️"
+    budget_status = "Healthy" if balance >= 0 else "Needs Attention"
     budget_advice = "Your budget looks good!" if balance >= 0 else "Try to reduce expenses."
 
     context = {
@@ -29,7 +29,7 @@ def write_context(db):
             {"name": g.name, "target": g.target_amount}
             for g in goals
         ],
-        "chat_history": []  # Optional: leave as-is if chat history is stored separately
+        "chat_history": [] 
     }
 
     with open(CONTEXT_FILE, 'w') as f:
